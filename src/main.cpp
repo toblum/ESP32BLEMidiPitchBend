@@ -4,7 +4,7 @@
 * Author: Tobias Blum <github@tobiasblum.de>
 * Licence: MIT
 * Version: 0.1.0
-* *************************************************** */ 
+* *************************************************** */
 
 #include <Arduino.h>
 #include <ResponsiveAnalogRead.h>
@@ -15,10 +15,33 @@ const uint8_t potipin = POTIPIN;
 ResponsiveAnalogRead analog(potipin, true);
 
 // Globals
+enum Wheelmode
+{
+	PITCH,
+	MODULATION
+};
+
+Wheelmode wheelmode = MODULATION;
 uint8_t channel = MIDICHANNEL;
 unsigned long lastPitchTime;
 bool isConnected = false;
+bool modeChanged = true;
 int lastAnalogValue;
+
+// Button 1 pin
+const uint8_t btn1pin = BTN1PIN;
+void IRAM_ATTR btn1_isr() {
+	int buttonState = digitalRead(btn1pin);
+	modeChanged = true; // Make sure value is updated instantly after mode change
+
+	if (buttonState == 1) {
+		Serial.println("Switch to pitch mode!");
+		wheelmode = PITCH;
+	} else {
+		Serial.println("Switch to modulation mode!");
+		wheelmode = MODULATION;
+	}
+}
 
 
 void setup()
@@ -29,6 +52,8 @@ void setup()
 	Serial.println("Waiting for connections...");
 	//BLEMidiServer.enableDebugging();  // Uncomment if you want to see some debugging output from the library (not much for the server class...)
 
+	pinMode(btn1pin, INPUT_PULLUP);
+	attachInterrupt(btn1pin, btn1_isr, CHANGE);
 	pinMode(potipin, INPUT);
 }
 
@@ -38,7 +63,8 @@ void loop()
 
 	if (BLEMidiServer.isConnected())
 	{
-		if (!isConnected) {
+		if (!isConnected)
+		{
 			Serial.println("First device connected!");
 			isConnected = true;
 		}
@@ -49,13 +75,23 @@ void loop()
 			int analogValue = analog.getValue(); // 0 to 1023
 			int analogValueChange = abs(analogValue - lastAnalogValue);
 
-			if (analogValueChange > 10)
+			if (analogValueChange > 10 || modeChanged)
 			{
 				// Serial.println(analogValue);
 				lastAnalogValue = analogValue;
+				modeChanged = false;
 
-				uint16_t val = analogValue * 16; // 0 to 16368
-				BLEMidiServer.pitchBend(channel, val); // Expects values from 0 to 16383, map to complete range
+				if (wheelmode == PITCH)
+				{
+					uint16_t val = map(analogValue, 0, 1023, 0, 16368); // Map to 0 to 16368 range
+					BLEMidiServer.pitchBend(channel, val);
+				}
+
+				if (wheelmode == MODULATION)
+				{
+					uint16_t val = map(analogValue, 0, 1023, 0, 127); // Map to 0 to 127 range
+					BLEMidiServer.controlChange(channel, 1, val); // Send CC1 (modulation) message
+				}
 			}
 		}
 	}
