@@ -9,6 +9,7 @@
 #include <Arduino.h>
 #include <ResponsiveAnalogRead.h>
 #include <BLEMidi.h>
+#include <EasyButton.h>
 
 // Potentiometer pin
 const uint8_t potipin = POTIPIN;
@@ -30,19 +31,7 @@ int lastAnalogValue;
 
 // Button 1 pin
 const uint8_t btn1pin = BTN1PIN;
-void IRAM_ATTR btn1_isr() {
-	int buttonState = digitalRead(btn1pin);
-	modeChanged = true; // Make sure value is updated instantly after mode change
-
-	if (buttonState == 1) {
-		Serial.println("Switch to pitch mode!");
-		wheelmode = PITCH;
-	} else {
-		Serial.println("Switch to modulation mode!");
-		wheelmode = MODULATION;
-	}
-}
-
+EasyButton btn1(btn1pin);
 
 void setup()
 {
@@ -52,14 +41,25 @@ void setup()
 	Serial.println("Waiting for connections...");
 	//BLEMidiServer.enableDebugging();  // Uncomment if you want to see some debugging output from the library (not much for the server class...)
 
-	pinMode(btn1pin, INPUT_PULLUP);
-	attachInterrupt(btn1pin, btn1_isr, CHANGE);
+	btn1.begin();
 	pinMode(potipin, INPUT);
 }
 
 void loop()
 {
 	analog.update();
+	btn1.read();
+
+	if (btn1.wasPressed()) {
+		Serial.println("Switch to pitch mode!");
+		wheelmode = PITCH;
+		modeChanged = true; // Make sure value is updated instantly after mode change
+	}
+	if (btn1.wasReleased()) {
+		Serial.println("Switch to modulation mode!");
+		wheelmode = MODULATION;
+		modeChanged = true; // Make sure value is updated instantly after mode change
+	}
 
 	if (BLEMidiServer.isConnected())
 	{
